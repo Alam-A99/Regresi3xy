@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Regresi Linier Berganda (3 Variabel)</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script> 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script> 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script> 
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+    #plot {
+      margin-top: 30px;
+      background-color: white;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .input-mode-buttons {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .input-mode-buttons button {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .input-section {
+      display: none;
+    }
+    .active {
+      display: block !important;
+    }
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .input-group label {
+      width: 80px;
+      font-weight: bold;
+    }
+    .input-group input {
+      width: 120px;
+      padding: 6px;
+      font-size: 14px;
+    }
+    .paste-area {
+      width: 100%;
+      height: 200px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      resize: vertical;
+      margin-bottom: 15px;
+    }
+    .file-input {
+      margin: 10px 0;
+    }
+    #visualBtn {
+      margin-top: 15px;
+      padding: 10px 20px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #visualBtn:hover {
+      background-color: #45a049;
+    }
+    .error {
+      color: red;
+      font-style: italic;
+    }
+    .regression-equation {
+      color: #4CAF50;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    .prediction-result {
+      margin-top: 15px;
+      padding: 10px;
+      background-color: #f0fff0;
+      border-left: 4px solid #4CAF50;
+    }
+    .predict-group {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .predict-group label {
+      width: 120px;
+      font-weight: bold;
+    }
+    .predict-group input {
+      width: 100%;
+      padding: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Regresi Linier: Hubungan X1, X2, X3, dan Y</h2>
+
+    <!-- Tombol Mode Input -->
+    <div class="input-mode-buttons">
+      <button onclick="switchInputMode('manual')">Input Manual</button>
+      <button onclick="switchInputMode('paste')">Paste dari Excel</button>
+      <button onclick="switchInputMode('upload')">Upload File</button>
+    </div>
+
+    <!-- Input Manual -->
+    <div id="manual" class="input-section active">
+      <h3>Input Manual</h3>
+      <div id="manualInputs"></div>
+      <button onclick="addManualRow()">Tambah Baris</button>
+    </div>
+
+    <!-- Paste dari Excel -->
+    <div id="paste" class="input-section">
+      <h3>Paste dari Excel</h3>
+      <textarea id="dataTable" class="paste-area" placeholder="Contoh format (tab-separated):\nX1\tX2\tX3\tY\n100\t3\t10\t1200\n80\t2\t8\t900"></textarea>
+    </div>
+
+    <!-- Upload File -->
+    <div id="upload" class="input-section">
+      <h3>Upload File (CSV/Excel)</h3>
+      <input type="file" id="fileInput" class="file-input" accept=".csv, .xlsx, .xls" />
+    </div>
+
+    <!-- Tombol Visual -->
+    <button id="visualBtn" onclick="visualizeData()">Visual</button>
+    <div id="errorOutput" class="error"></div>
+    <div id="equationOutput" class="regression-equation"></div>
+
+    <!-- Visualisasi -->
+    <div id="plot" style="width:100%; height:700px;"></div>
+
+    <!-- Form Prediksi -->
+    <div class="input-container" id="predictContainer" style="display: none;">
+      <h3>Form Prediksi</h3>
+      <div class="predict-group">
+        <label for="x1Predict">X1:</label>
+        <input type="number" id="x1Predict" placeholder="Masukkan nilai X1">
+      </div>
+      <div class="predict-group">
+        <label for="x2Predict">X2:</label>
+        <input type="number" id="x2Predict" placeholder="Masukkan nilai X2">
+      </div>
+      <div class="predict-group">
+        <label for="x3Predict">X3:</label>
+        <input type="number" id="x3Predict" placeholder="Masukkan nilai X3">
+      </div>
+      <button id="predictBtn" onclick="predictY()">Prediksi Y</button>
+      <div id="predictionOutput" class="prediction-result"></div>
+    </div>
+  </div>
+
+  <script>
+    let data = { X1: [], X2: [], X3: [], Y: [] };
+    let coefficients = null;
+
+    // Switch mode input
+    function switchInputMode(mode) {
+      document.querySelectorAll('.input-section').forEach(el => el.classList.remove('active'));
+      document.getElementById(mode).classList.add('active');
+    }
+
+    // Tambah baris input manual
+    function addManualRow() {
+      const container = document.getElementById('manualInputs');
+      const row = document.createElement('div');
+      row.className = 'input-group';
+      row.innerHTML = `
+        <label>X1:</label><input class="manual-x1">
+        <label>X2:</label><input class="manual-x2">
+        <label>X3:</label><input class="manual-x3">
+        <label>Y:</label><input class="manual-y">
+      `;
+      container.appendChild(row);
+    }
+
+    // Ambil data dari input manual
+    function getDataFromManual() {
+      const rows = document.querySelectorAll('#manualInputs .input-group');
+      const newData = { X1: [], X2: [], X3: [], Y: [] };
+      let isValid = true;
+      rows.forEach((row, i) => {
+        const x1 = row.querySelector('.manual-x1').value.trim();
+        const x2 = row.querySelector('.manual-x2').value.trim();
+        const x3 = row.querySelector('.manual-x3').value.trim();
+        const y = row.querySelector('.manual-y').value.trim();
+        if (!validateInput(x1) || !validateInput(x2) || !validateInput(x3) || !validateInput(y)) {
+          showError(`Baris ${i+1}: Semua kolom harus berisi angka`);
+          isValid = false;
+          return;
+        }
+        newData.X1.push(parseFloat(x1));
+        newData.X2.push(parseFloat(x2));
+        newData.X3.push(parseFloat(x3));
+        newData.Y.push(parseFloat(y));
+      });
+      if (newData.X1.length < 4) {
+        showError('Minimal 4 baris data diperlukan untuk regresi 3 variabel');
+        isValid = false;
+      }
+      return { data: newData, valid: isValid };
+    }
+
+    // Ambil data dari textarea (paste excel)
+    function getDataFromPaste() {
+      const rawData = document.getElementById('dataTable').value.trim();
+      const newData = { X1: [], X2: [], X3: [], Y: [] };
+      const errorDiv = document.getElementById('errorOutput');
+      errorDiv.textContent = '';
+      if (!rawData) {
+        errorDiv.textContent = 'Mohon masukkan data';
+        return { data: newData, valid: false };
+      }
+      const rows = rawData.split('\n');
+      let isValid = true;
+      for (let i = 0; i < rows.length; i++) {
+        const cols = rows[i].split('\t');
+        if (cols.length !== 4) continue;
+        if (i === 0 && cols[0].toLowerCase().includes('x1')) continue;
+        const x1 = cols[0].trim();
+        const x2 = cols[1].trim();
+        const x3 = cols[2].trim();
+        const y = cols[3].trim();
+        if (!validateInput(x1) || !validateInput(x2) || !validateInput(x3) || !validateInput(y)) {
+          showError(`Baris ${i+1}: Semua kolom harus berisi angka`);
+          isValid = false;
+          break;
+        }
+        newData.X1.push(parseFloat(x1));
+        newData.X2.push(parseFloat(x2));
+        newData.X3.push(parseFloat(x3));
+        newData.Y.push(parseFloat(y));
+      }
+      if (newData.X1.length < 4) {
+        showError('Minimal 4 baris data diperlukan untuk regresi 3 variabel');
+        isValid = false;
+      }
+      return { data: newData, valid: isValid };
+    }
+
+    // Ambil data dari file Excel/CSV
+    function handleFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const dataArr = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(dataArr, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const sheetData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        const newData = { X1: [], X2: [], X3: [], Y: [] };
+        let isValid = true;
+        for (let i = 0; i < sheetData.length; i++) {
+          const row = sheetData[i];
+          if (i === 0 && row[0] && row[0].toString().toLowerCase().includes('x1')) continue;
+          if (row.length < 4) continue;
+          const x1 = row[0];
+          const x2 = row[1];
+          const x3 = row[2];
+          const y = row[3];
+          if (!validateInput(x1) || !validateInput(x2) || !validateInput(x3) || !validateInput(y)) {
+            showError(`Baris ${i+1}: Semua kolom harus berisi angka`);
+            isValid = false;
+            break;
+          }
+          newData.X1.push(parseFloat(x1));
+          newData.X2.push(parseFloat(x2));
+          newData.X3.push(parseFloat(x3));
+          newData.Y.push(parseFloat(y));
+        }
+        if (newData.X1.length < 4) {
+          showError('Minimal 4 baris data diperlukan untuk regresi 3 variabel');
+          isValid = false;
+        }
+        if (isValid) {
+          data = newData;
+          visualizeData();
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // Parsing CSV
+    function handleCSV(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      Papa.parse(file, {
+        header: false,
+        skipEmptyLines: true,
+        complete: function(results) {
+          const newData = { X1: [], X2: [], X3: [], Y: [] };
+          let isValid = true;
+          for (let i = 0; i < results.data.length; i++) {
+            const row = results.data[i];
+            if (i === 0 && row[0].toString().toLowerCase().includes('x1')) continue;
+            if (row.length < 4) continue;
+            const x1 = row[0];
+            const x2 = row[1];
+            const x3 = row[2];
+            const y = row[3];
+            if (!validateInput(x1) || !validateInput(x2) || !validateInput(x3) || !validateInput(y)) {
+              showError(`Baris ${i+1}: Semua kolom harus berisi angka`);
+              isValid = false;
+              break;
+            }
+            newData.X1.push(parseFloat(x1));
+            newData.X2.push(parseFloat(x2));
+            newData.X3.push(parseFloat(x3));
+            newData.Y.push(parseFloat(y));
+          }
+          if (newData.X1.length < 4) {
+            showError('Minimal 4 baris data diperlukan untuk regresi 3 variabel');
+            isValid = false;
+          }
+          if (isValid) {
+            data = newData;
+            visualizeData();
+          }
+        }
+      });
+    }
+
+    // Validasi input
+    function validateInput(value) {
+      return !isNaN(parseFloat(value)) && isFinite(value);
+    }
+
+    // Hitung rata-rata
+    function mean(arr) {
+      return arr.reduce((sum, val) => sum + val, 0) / arr.length;
+    }
+
+    // Hitung deviasi standar
+    function stdDev(arr, meanVal) {
+      return Math.sqrt(arr.reduce((sum, val) => sum + Math.pow(val - meanVal, 2), 0) / (arr.length - 1));
+    }
+
+    // Hitung korelasi
+    function correlation(x, y) {
+      const xMean = mean(x);
+      const yMean = mean(y);
+      let numerator = 0, xSum = 0, ySum = 0;
+      for (let i = 0; i < x.length; i++) {
+        const xDiff = x[i] - xMean;
+        const yDiff = y[i] - yMean;
+        numerator += xDiff * yDiff;
+        xSum += xDiff * xDiff;
+        ySum += yDiff * yDiff;
+      }
+      return numerator / Math.sqrt(xSum * ySum);
+    }
+
+    // Hitung regresi linier 3 variabel
+    function calculateRegressionCoefficients(data) {
+      const { X1, X2, X3, Y } = data;
+      const n = X1.length;
+      const x1Mean = mean(X1), x2Mean = mean(X2), x3Mean = mean(X3), yMean = mean(Y);
+      const r1y = correlation(X1, Y);
+      const r2y = correlation(X2, Y);
+      const r3y = correlation(X3, Y);
+      const r12 = correlation(X1, X2);
+      const r13 = correlation(X1, X3);
+      const r23 = correlation(X2, X3);
+
+      // Matriks korelasi
+      const A = [
+        [1, r12, r13],
+        [r12, 1, r23],
+        [r13, r23, 1]
+      ];
+      const B = [r1y, r2y, r3y];
+      const Ainv = inverseMatrix(A);
+      if (!Ainv) return null;
+
+      // Hitung koefisien beta
+      const betas = multiplyMatrixVector(Ainv, B);
+      const sy = stdDev(Y, yMean);
+      const sx1 = stdDev(X1, x1Mean);
+      const sx2 = stdDev(X2, x2Mean);
+      const sx3 = stdDev(X3, x3Mean);
+      const b1 = betas[0] * (sy / sx1);
+      const b2 = betas[1] * (sy / sx2);
+      const b3 = betas[2] * (sy / sx3);
+      const a = yMean - b1*x1Mean - b2*x2Mean - b3*x3Mean;
+
+      // Hitung prediksi dan R-squared
+      const yPred = X1.map((_, i) => a + b1*X1[i] + b2*X2[i] + b3*X3[i]);
+      const ssRes = Y.reduce((sum, yi, i) => sum + (yi - yPred[i])**2, 0);
+      const ssTot = Y.reduce((sum, yi) => sum + (yi - yMean)**2, 0);
+      const r2 = 1 - ssRes / ssTot;
+      const adjR2 = 1 - (1 - r2) * (n - 1) / (n - 4); // Adjusted R²
+
+      return { a, b1, b2, b3, r2, adjR2 };
+    }
+
+    // Fungsi invers matriks 3x3
+    function inverseMatrix(mat) {
+      const [a,b,c,d,e,f,g,h,i] = mat[0].concat(mat[1], mat[2]);
+      const det = a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);
+      if (Math.abs(det) < 1e-10) return null;
+      return [
+        [(e*i - f*h)/det, (c*h - b*i)/det, (b*f - c*e)/det],
+        [(f*g - d*i)/det, (a*i - c*g)/det, (c*d - a*f)/det],
+        [(d*h - e*g)/det, (b*g - a*h)/det, (a*e - b*d)/det]
+      ];
+    }
+
+    // Perkalian matriks dan vektor
+    function multiplyMatrixVector(mat, vec) {
+      return mat.map(row => row.reduce((sum, val, j) => sum + val * vec[j], 0));
+    }
+
+    // Hitung bidang regresi
+    function calculateRegressionPlane(data, coefficients) {
+      const { X1, X2, X3, Y } = data;
+      const x1Range = [Math.min(...X1), Math.max(...X1)];
+      const x2Range = [Math.min(...X2), Math.max(...X2)];
+      const x3Range = [Math.min(...X3), Math.max(...X3)];
+      return { x1: x1Range, x2: x2Range, x3: x3Range };
+    }
+
+    // Visualisasi 3D (scatter plot + bidang regresi)
+    function updateVisualization(data, planeData, coefficients) {
+      const trace1 = {
+        x: data.X1, y: data.X2, z: data.X3, mode: 'markers',
+        type: 'scatter3d', name: 'Data Input',
+        marker: { size: 5, color: 'rgb(255, 140, 0)', opacity: 0.8 }
+      };
+
+      const trace2 = {
+        x: [Math.min(...data.X1), Math.max(...data.X1)],
+        y: [Math.min(...data.X2), Math.max(...data.X2)],
+        z: [Math.min(...data.X3), Math.max(...data.X3)],
+        type: 'mesh3d',
+        name: 'Bidang Regresi',
+        color: 'rgba(0, 150, 0, 0.4)'
+      };
+
+      const layout = {
+        title: 'Regresi Linier 3D: Y vs X1, X2, X3',
+        scene: {
+          xaxis: { title: 'X1' },
+          yaxis: { title: 'X2' },
+          zaxis: { title: 'X3' }
+        },
+        annotations: [{
+          text: `Persamaan: Y = ${coefficients.a.toFixed(2)} + ${coefficients.b1.toFixed(2)} × X1 + ${coefficients.b2.toFixed(2)} × X2 + ${coefficients.b3.toFixed(2)} × X3<br>R² = ${coefficients.r2.toFixed(2)} | Adjusted R² = ${coefficients.adjR2.toFixed(2)}`,
+          x: 0, y: 1.1, xref: 'paper', yref: 'paper',
+          showarrow: false, bgcolor: 'white', bordercolor: 'black', borderwidth: 1
+        }],
+        margin: { l: 50, r: 50, b: 50, t: 80 },
+        showlegend: true
+      };
+
+      Plotly.newPlot('plot', [trace1], layout);
+    }
+
+    // Fungsi utama untuk visualisasi
+    function visualizeData() {
+      let inputMethod = 'manual';
+      if (document.getElementById('paste').classList.contains('active')) inputMethod = 'paste';
+      else if (document.getElementById('upload').classList.contains('active')) inputMethod = 'upload';
+
+      let inputData = null;
+      if (inputMethod === 'manual') inputData = getDataFromManual();
+      else if (inputMethod === 'paste') inputData = getDataFromPaste();
+      else return;
+
+      if (!inputData.valid) return;
+      data = inputData.data;
+      coefficients = calculateRegressionCoefficients(data);
+      if (!coefficients) {
+        showError('Tidak dapat menghitung persamaan regresi (masalah dengan data input)');
+        return;
+      }
+
+      document.getElementById('equationOutput').innerHTML = `
+        <div>Persamaan Regresi: Y = ${coefficients.a.toFixed(2)} + ${coefficients.b1.toFixed(2)} × X1 + ${coefficients.b2.toFixed(2)} × X2 + ${coefficients.b3.toFixed(2)} × X3</div>
+        <div>R² = ${coefficients.r2.toFixed(2)} | Adjusted R² = ${coefficients.adjR2.toFixed(2)}</div>
+      `;
+
+      const planeData = calculateRegressionPlane(data, coefficients);
+      updateVisualization(data, planeData, coefficients);
+      document.getElementById('predictContainer').style.display = 'block';
+    }
+
+    // Prediksi Y
+    function predictY() {
+      const x1 = parseFloat(document.getElementById('x1Predict').value);
+      const x2 = parseFloat(document.getElementById('x2Predict').value);
+      const x3 = parseFloat(document.getElementById('x3Predict').value);
+      const resultDiv = document.getElementById('predictionOutput');
+
+      if (isNaN(x1) || isNaN(x2) || isNaN(x3)) {
+        resultDiv.innerHTML = '<span class="error">Mohon masukkan angka valid untuk ketiga input!</span>';
+        return;
+      }
+
+      const predictedY = coefficients.a + coefficients.b1*x1 + coefficients.b2*x2 + coefficients.b3*x3;
+      resultDiv.innerHTML = `
+        <p>Prediksi Y untuk:</p>
+        <ul>
+          <li>X1: <strong>${x1}</strong></li>
+          <li>X2: <strong>${x2}</strong></li>
+          <li>X3: <strong>${x3}</strong></li>
+        </ul>
+        <p>Hasil Prediksi: <strong>${predictedY.toFixed(2)}</strong></p>
+        <p><em>Nilai ini dihitung menggunakan persamaan regresi di atas</em></p>
+      `;
+    }
+
+    // Tampilkan error
+    function showError(message) {
+      document.getElementById('errorOutput').innerHTML = `<span class="error">${message}</span>`;
+    }
+
+    // Inisialisasi
+    window.addEventListener('load', () => {
+      for (let i = 0; i < 5; i++) addManualRow();
+      document.getElementById('fileInput').addEventListener('change', handleFile);
+      document.getElementById('fileInput').addEventListener('change', handleCSV);
+    });
+  </script>
+</body>
+</html>
